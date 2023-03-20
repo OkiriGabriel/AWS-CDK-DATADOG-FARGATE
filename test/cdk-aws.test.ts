@@ -1,17 +1,66 @@
-// import * as cdk from 'aws-cdk-lib';
-// import { Template } from 'aws-cdk-lib/assertions';
-// import * as CdkAws from '../lib/cdk-aws-stack';
+import { expect, haveResourceLike } from '@aws-cdk/assert';
+import * as ecs from '@aws-cdk/aws-ecs';
+import * as cdk from '@aws-cdk/core';
+import { CdkEcsStack } from '../lib';
 
-// example test. To run these tests, uncomment this file along with the
-// example resource in lib/cdk-aws-stack.ts
-test('SQS Queue Created', () => {
-//   const app = new cdk.App();
-//     // WHEN
-//   const stack = new CdkAws.CdkAwsStack(app, 'MyTestStack');
-//     // THEN
-//   const template = Template.fromStack(stack);
+test('test datadog fargate integration construct', () => {
 
-//   template.hasResourceProperties('AWS::SQS::Queue', {
-//     VisibilityTimeout: 300
-//   });
+  // GIVEN
+  const app = new cdk.App();
+  const stack = new cdk.Stack(app, 'flaskapp');
+  const taskDefinition = new ecs.TaskDefinition(stack, 'taskcont', {
+    compatibility: ecs.Compatibility.FARGATE,
+    memoryMiB: '2048',
+    cpu: '2048',
+  });
+
+  // WHEN
+  new CdkEcsStack(stack, 'Service', taskDefinition, {
+    datadogApiKey: 'YOUR_API_KEY',
+  });
+
+  // THEN - stack contains a taskDefinition with Datadog definition
+  expect(stack).to(haveResourceLike('AWS::ECS::TaskDefinition', 
+  {
+    "ContainerDefinitions": [
+      {
+        "Environment": [
+          {
+            "Name": "ECS_FARGATE",
+            "Value": "true"
+          },
+          {
+            "Name": "DD_API_KEY",
+            "Value": {
+              "Ref": "ServiceDatadogApiKeyParameter"
+            }
+          }
+        ],
+        "Essential": true,
+        "Image": "public.ecr.aws/datadog/agent:latest",
+        "Memory": 512,
+        "Name": "datadog-agent",
+        "PortMappings": [
+          {
+            "ContainerPort": 8125,
+            "Protocol": "udp"
+          }
+        ]
+      }
+    ],
+    "Cpu": "2048",
+    "Family": "taskcont",
+    "Memory": "2048",
+    "NetworkMode": "awsvpc",
+    "RequiresCompatibilities": [
+      "FARGATE"
+    ],
+    "TaskRoleArn": {
+      "Fn::GetAtt": [
+        "task-def",
+        "Arn"
+      ]
+    }
+  }
+  ));
 });

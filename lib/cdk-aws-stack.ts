@@ -1,16 +1,55 @@
-import * as cdk from 'aws-cdk-lib';
-import { Construct } from 'constructs';
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
+ 
+import * as ecs from '@aws-cdk/aws-ecs';
+import * as ssm from '@aws-cdk/aws-ssm';
 
-export class CdkAwsStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
+import * as cdk from '@aws-cdk/core';
+import { DataDogIntegrationProps } from './datadog-integration-props';
 
-    // The code that defines your stack goes here
+/** Include Datadog agent in the specified task definition. */
+export class CdkEcsStack extends cdk.Stack {
+  constructor(
+    parent: cdk.Stack, name: string,
+    taskDefinition: ecs.TaskDefinition,
+    props: DataDogIntegrationProps) {
+    super(parent, name);
 
-    // example resource
-    // const queue = new sqs.Queue(this, 'CdkAwsQueue', {
-    //   visibilityTimeout: cdk.Duration.seconds(300)
+    if (!taskDefinition.isFargateCompatible) {
+      throw new Error('Only Fargate supported');
+    }
+
+    // Datadog parameters
+    const environment = {
+      ECS_FARGATE: 'true',
+      DD_API_KEY: ssm.StringParameter.fromStringParameterName(parent, `${name}DatadogApiKey`, props.datadogApiKey).stringValue,
+      ...props.environment,
+    };
+
+    const datadog = taskDefinition.addContainer('datadog-agent', {
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/datadog/agent:latest'),
+      memoryLimitMiB: 512,
+      logging: props.logging,
+      environment,
+      essential: true,
+    });
+
+    const container = taskDefinition.addContainer('flaskapp', {
+      image: ecs.ContainerImage.fromRegistry('nginx'),
+      memoryLimitMiB: 256,
+      essential: true,
+    });
+
+    container.addPortMappings({
+      containerPort: 80,
+      protocol: ecs.Protocol.TCP,
+    });
+    // datadog.addPortMappings({
+    //   containerPort: 8126,
+    //   protocol: ecs.Protocol.TCP,
     // });
+
+    datadog.addPortMappings({
+      containerPort: 8125,
+      protocol: ecs.Protocol.UDP,
+    });
   }
 }
